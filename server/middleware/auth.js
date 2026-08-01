@@ -6,7 +6,8 @@ module.exports = function protect(req, res, next) {
     return res.status(401).json({ message: "Please log in" });
   }
   try {
-    jwt.verify(header.split(" ")[1], process.env.JWT_SECRET);
+    const decoded = jwt.verify(header.split(" ")[1], process.env.JWT_SECRET);
+    req.userId = decoded.id;
     next();
   } catch {
     res.status(401).json({ message: "Session expired, please log in again" });

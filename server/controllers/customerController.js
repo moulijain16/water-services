@@ -1,11 +1,12 @@
 const Customer = require("../models/Customer");
 
-// @desc  Create a new customer
+// @desc  Create a new customer, owned by the logged-in user
 // @route POST /api/customers
 exports.createCustomer = async (req, res) => {
   try {
     const { name, phone, email, address, purifierModel, installationDate, lastServiceDate, notes } = req.body;
     const customer = await Customer.create({
+      owner: req.userId,
       name,
       phone,
       email,
@@ -21,14 +22,12 @@ exports.createCustomer = async (req, res) => {
   }
 };
 
-// @desc  Get all customers (supports ?search= & ?status=due|active|inactive)
-// @route GET /api/customers
-// @desc  Get all customers (supports ?search= & ?status=due|week|active|inactive)
+// @desc  Get all customers belonging to the logged-in user
 // @route GET /api/customers
 exports.getCustomers = async (req, res) => {
   try {
     const { search, status } = req.query;
-    const query = {};
+    const query = { owner: req.userId };
 
     if (search) {
       query.$or = [
@@ -37,33 +36,13 @@ exports.getCustomers = async (req, res) => {
         { address: { $regex: search, $options: "i" } },
       ];
     }
-
     if (status === "active") query.isActive = true;
     if (status === "inactive") query.isActive = false;
 
     let customers = await Customer.find(query).sort({ nextServiceDate: 1 });
 
-    const today = new Date();
-    const nextWeek = new Date();
-    nextWeek.setDate(today.getDate() + 7);
-
     if (status === "due") {
-      customers = customers.filter(
-        (c) =>
-          c.isActive &&
-          c.nextServiceDate &&
-          c.nextServiceDate <= today
-      );
-    }
-
-    if (status === "week") {
-      customers = customers.filter(
-        (c) =>
-          c.isActive &&
-          c.nextServiceDate &&
-          c.nextServiceDate > today &&
-          c.nextServiceDate <= nextWeek
-      );
+      customers = customers.filter((c) => c.isActive && c.nextServiceDate && new Date() >= c.nextServiceDate);
     }
 
     res.json(customers);
@@ -72,11 +51,11 @@ exports.getCustomers = async (req, res) => {
   }
 };
 
-// @desc  Get single customer (includes full serviceHistory)
+// @desc  Get a single customer, only if it belongs to the logged-in user
 // @route GET /api/customers/:id
 exports.getCustomerById = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, owner: req.userId });
     if (!customer) return res.status(404).json({ message: "Customer not found" });
     res.json(customer);
   } catch (error) {
@@ -84,11 +63,11 @@ exports.getCustomerById = async (req, res) => {
   }
 };
 
-// @desc  Update customer details
+// @desc  Update a customer, only if it belongs to the logged-in user
 // @route PUT /api/customers/:id
 exports.updateCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, owner: req.userId });
     if (!customer) return res.status(404).json({ message: "Customer not found" });
 
     const updatable = ["name", "phone", "email", "address", "purifierModel", "installationDate", "notes", "isActive"];
@@ -103,11 +82,11 @@ exports.updateCustomer = async (req, res) => {
   }
 };
 
-// @desc  Delete customer
+// @desc  Delete a customer, only if it belongs to the logged-in user
 // @route DELETE /api/customers/:id
 exports.deleteCustomer = async (req, res) => {
   try {
-    const customer = await Customer.findByIdAndDelete(req.params.id);
+    const customer = await Customer.findOneAndDelete({ _id: req.params.id, owner: req.userId });
     if (!customer) return res.status(404).json({ message: "Customer not found" });
     res.json({ message: "Customer deleted" });
   } catch (error) {
@@ -115,25 +94,17 @@ exports.deleteCustomer = async (req, res) => {
   }
 };
 
-// @desc  Log a new service visit — this resets the 3-month due cycle
+// @desc  Log a service visit, only if the customer belongs to the logged-in user
 // @route POST /api/customers/:id/service
 exports.addServiceRecord = async (req, res) => {
   try {
-    const customer = await Customer.findById(req.params.id);
+    const customer = await Customer.findOne({ _id: req.params.id, owner: req.userId });
     if (!customer) return res.status(404).json({ message: "Customer not found" });
 
     const { date, serviceType, partsReplaced, notes, chargedAmount } = req.body;
     const serviceDate = date || new Date();
 
-    customer.serviceHistory.push({
-      date: serviceDate,
-      serviceType,
-      partsReplaced,
-      notes,
-      chargedAmount,
-    });
-
-    // Triggers the pre('save') hook that recalculates nextServiceDate
+    customer.serviceHistory.push({ date: serviceDate, serviceType, partsReplaced, notes, chargedAmount });
     customer.lastServiceDate = serviceDate;
 
     await customer.save();
@@ -143,11 +114,11 @@ exports.addServiceRecord = async (req, res) => {
   }
 };
 
-// @desc  Dashboard summary counts
+// @desc  Dashboard stats scoped to the logged-in user only
 // @route GET /api/customers/stats/summary
 exports.getDashboardStats = async (req, res) => {
   try {
-    const all = await Customer.find({ isActive: true });
+    const all = await Customer.find({ isActive: true, owner: req.userId });
 
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -162,7 +133,7 @@ exports.getDashboardStats = async (req, res) => {
       (c) => c.nextServiceDate && c.nextServiceDate >= endOfToday && c.nextServiceDate < weekFromNow
     );
 
-    const totalCustomers = await Customer.countDocuments({});
+    const totalCustomers = await Customer.countDocuments({ owner: req.userId });
 
     res.json({
       totalCustomers,

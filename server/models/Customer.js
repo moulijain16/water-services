@@ -17,13 +17,14 @@ const serviceEntrySchema = new mongoose.Schema(
 
 const customerSchema = new mongoose.Schema(
   {
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: [true, "Name is required"], trim: true },
-   phone: {
-  type: String,
-  required: [true, "Phone is required"],
-  trim: true,
-  match: [/^[6-9]\d{9}$/, "Enter a valid 10-digit phone number"],
-},
+    phone: {
+      type: String,
+      required: [true, "Phone is required"],
+      trim: true,
+      match: [/^[6-9]\d{9}$/, "Enter a valid 10-digit phone number"],
+    },
     email: { type: String, trim: true, lowercase: true, default: "" },
     address: { type: String, required: [true, "Address is required"], trim: true },
     purifierModel: { type: String, trim: true, default: "" },
@@ -37,8 +38,7 @@ const customerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-calculate nextServiceDate whenever lastServiceDate changes
-customerSchema.pre("save", function (next) {
+customerSchema.pre("save", function () {
   if (this.isModified("lastServiceDate") || this.isNew) {
     const months = Number(process.env.SERVICE_INTERVAL_MONTHS) || 3;
     const next3Months = new Date(this.lastServiceDate);
@@ -52,6 +52,7 @@ customerSchema.virtual("isDue").get(function () {
 });
 customerSchema.set("toJSON", { virtuals: true });
 
-customerSchema.index({ name: "text", phone: "text", address: "text" });
+// Search index now scoped alongside owner for efficient per-user queries
+customerSchema.index({ owner: 1, name: "text", phone: "text", address: "text" });
 
 module.exports = mongoose.model("Customer", customerSchema);
