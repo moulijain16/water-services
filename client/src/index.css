@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:focus-visible {
+  outline: 2px solid #12727f;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-ink-300/40 px-3 py-2 text-sm text-ink-900 focus:border-teal-500 outline-none;
+  }
+  .btn-primary {
+    @apply bg-teal-600 hover:bg-teal-500 text-white rounded-lg py-2.5 px-4 font-medium transition-colors disabled:opacity-60;
+  }
+}
